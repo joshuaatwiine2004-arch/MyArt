@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Atwiine — Drawings & Paintings</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Karla:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#EDEBE6;--ink:#1D2433;--mute:#667085;--line:#cfccc4;--accent:#2F5BEA;--card:#F8F7F3;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14171F;--ink:#ECEAE4;--mute:#9AA1B2;--line:#2c3140;--accent:#7C9BFF;--card:#1C202B}}
+:root[data-theme="dark"]{--bg:#14171F;--ink:#ECEAE4;--mute:#9AA1B2;--line:#2c3140;--accent:#7C9BFF;--card:#1C202B}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Karla,system-ui,sans-serif}
+header{max-width:1100px;margin:0 auto;padding:48px 20px 20px;display:flex;flex-wrap:wrap;gap:16px;align-items:end;justify-content:space-between}
+h1{font:600 clamp(2.4rem,7vw,4.5rem)/1 Fraunces,Georgia,serif;margin:0;letter-spacing:-.02em}
+header p{margin:8px 0 0;color:var(--mute);max-width:36ch}
+button,label.btn{font:600 15px Karla,sans-serif;background:var(--accent);color:#fff;border:0;border-radius:6px;padding:11px 18px;cursor:pointer;display:inline-block}
+button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+main{max-width:1100px;margin:0 auto;padding:12px 20px 80px}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}
+.filters button{background:transparent;color:var(--mute);border:1px solid var(--line);padding:6px 14px}
+.filters button[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.wall{columns:3 260px;column-gap:18px}
+figure{margin:0 0 18px;break-inside:avoid;background:var(--card);padding:10px 10px 12px;border:1px solid var(--line);cursor:zoom-in}
+figure img{width:100%;display:block}
+figcaption{display:flex;justify-content:space-between;gap:8px;padding-top:9px;font-size:14px}
+figcaption span{color:var(--mute)}
+.empty{border:2px dashed var(--line);padding:56px 20px;text-align:center;color:var(--mute)}
+.empty strong{display:block;font:600 1.5rem Fraunces,serif;color:var(--ink);margin-bottom:6px}
+dialog{border:0;padding:0;background:transparent;max-width:min(94vw,900px);width:100%;color:var(--ink)}
+dialog::backdrop{background:rgba(10,12,18,.85)}
+.panel{background:var(--card);padding:20px;border-radius:8px}
+.panel img{max-width:100%;max-height:70vh;display:block;margin:0 auto 12px}
+form.add{display:grid;gap:12px}
+input[type=text]{font:inherit;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);width:100%}
+.row{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.note{font-size:13px;color:var(--mute);margin:0}
+footer{max-width:1100px;margin:0 auto;padding:0 20px 40px;color:var(--mute);font-size:13px}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Atwiine</h1>
+    <p>Drawings and paintings, posted as I finish them.</p>
+  </div>
+  <button id="addBtn">Add artwork</button>
+</header>
+<main>
+  <div class="filters" id="filters" role="group" aria-label="Filter by medium"></div>
+  <div class="wall" id="wall"></div>
+</main>
+<footer>Artwork is saved in this browser. To publish for everyone, see the hosting steps in the chat.</footer>
+
+<dialog id="addDlg"><div class="panel">
+  <form class="add" id="addForm">
+    <label class="btn" for="file" style="text-align:center">Choose image</label>
+    <input id="file" type="file" accept="image/*" hidden required>
+    <img id="prev" alt="" style="max-height:40vh;display:none;margin:auto">
+    <input type="text" id="title" placeholder="Title" required>
+    <input type="text" id="medium" placeholder="Medium (pencil, acrylic, watercolour…)">
+    <p class="note">Large photos are shrunk to 1600px so the page stays fast.</p>
+    <div class="row"><button type="button" class="ghost" id="cancel">Cancel</button><button type="submit">Post artwork</button></div>
+  </form>
+</div></dialog>
+
+<dialog id="viewDlg"><div class="panel">
+  <img id="big" alt=""><strong id="bt"></strong> <span id="bm" style="color:var(--mute)"></span>
+  <div class="row"><button class="ghost" id="del">Delete</button><button id="close">Close</button></div>
+</div></dialog>
+
+<script>
+let items=[], filter='All', current=null, pending=null;
+const $=id=>document.getElementById(id);
+let db=null;
+const open=indexedDB&&indexedDB.open?(()=>{try{return indexedDB.open('artsite',1)}catch(e){return null}})():null;
+function tx(mode){return db.transaction('art',mode).objectStore('art')}
+function load(){
+  if(!db)return render();
+  try{const r=tx('readonly').getAll();r.onsuccess=()=>{items=r.result.sort((a,b)=>b.id-a.id);render()};r.onerror=render}catch(e){render()}
+}
+if(open){open.onupgradeneeded=()=>open.result.createObjectStore('art',{keyPath:'id'});open.onsuccess=()=>{db=open.result;load()};open.onerror=render}else render();
+
+function render(){
+  const media=['All',...new Set(items.map(i=>i.medium).filter(Boolean))];
+  $('filters').innerHTML='';
+  if(media.length>2)media.forEach(m=>{const b=document.createElement('button');b.textContent=m;b.setAttribute('aria-pressed',m===filter);b.onclick=()=>{filter=m;render()};$('filters').append(b)});
+  const wall=$('wall');wall.innerHTML='';
+  const shown=items.filter(i=>filter==='All'||i.medium===filter);
+  if(!shown.length){wall.style.columns='auto';wall.innerHTML='<div class="empty"><strong>The wall is empty</strong>Add your first drawing or painting to hang it here.</div>';return}
+  wall.style.columns='';
+  shown.forEach(i=>{
+    const f=document.createElement('figure');f.tabIndex=0;
+    f.innerHTML='<img alt=""><figcaption><b></b><span></span></figcaption>';
+    f.querySelector('img').src=i.src;f.querySelector('img').alt=i.title;
+    f.querySelector('b').textContent=i.title;f.querySelector('span').textContent=i.medium||'';
+    const show=()=>{current=i;$('big').src=i.src;$('big').alt=i.title;$('bt').textContent=i.title;$('bm').textContent=i.medium||'';$('viewDlg').showModal()};
+    f.onclick=show;f.onkeydown=e=>{if(e.key==='Enter')show()};
+    wall.append(f);
+  });
+}
+$('addBtn').onclick=()=>{$('addForm').reset();$('prev').style.display='none';pending=null;$('addDlg').showModal()};
+$('cancel').onclick=()=>$('addDlg').close();
+$('close').onclick=()=>$('viewDlg').close();
+$('file').onchange=e=>{
+  const f=e.target.files[0];if(!f)return;
+  const img=new Image();img.onload=()=>{
+    const s=Math.min(1,1600/Math.max(img.width,img.height)),c=document.createElement('canvas');
+    c.width=img.width*s;c.height=img.height*s;c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+    pending=c.toDataURL('image/jpeg',.88);$('prev').src=pending;$('prev').style.display='block';
+  };img.src=URL.createObjectURL(f);
+};
+$('addForm').onsubmit=e=>{
+  e.preventDefault();if(!pending){$('file').click();return}
+  const it={id:Date.now(),title:$('title').value.trim(),medium:$('medium').value.trim(),src:pending};
+  items.unshift(it);if(db){try{tx('readwrite').put(it)}catch(x){}}
+  $('addDlg').close();render();
+};
+$('del').onclick=()=>{
+  if(!current||!confirm('Delete this artwork?'))return;
+  items=items.filter(i=>i.id!==current.id);if(db){try{tx('readwrite').delete(current.id)}catch(x){}}
+  $('viewDlg').close();render();
+};
+</script>
+</body>
+</html>
